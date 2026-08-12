@@ -1,0 +1,16 @@
+name: maelstrom-gate
+version: 1.0.0
+description: >
+  Oppositional ship gate for Hermes skills and plugins. Named for
+  Moskstraumen, the Lofoten maelstrom.
+author: SMF Works / Team Maelstrom (Lofoten Sprint 2026-08-12)
+provides_tools:
+  - maelstrom_check_skill
+  - maelstrom_check_plugin
+  - maelstrom_run_pytest
+provides_commands:
+  - maelstrom
+provides_cli_commands:
+  - maelstrom
+provides_skills:
+  - maelstrom-oppose
