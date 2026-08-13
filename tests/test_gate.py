@@ -59,6 +59,13 @@ def test_run_pytest_ok(tmp_path):
     assert r["status"] == "pass"
 
 
+def test_run_pytest_rejects_positional_extra(tmp_path):
+    (tmp_path / "tests").mkdir()
+    r = gate.run_pytest(str(tmp_path), extra_args=["/tmp/evil"])
+    assert r["ok"] is False
+    assert "unapproved" in r["stderr"]
+
+
 def test_run_pytest_rejects_extra_args(tmp_path):
     (tmp_path / "tests").mkdir()
     r = gate.run_pytest(str(tmp_path), extra_args=["--maxfail=1", "-k", "evil"])

@@ -271,7 +271,8 @@ def run_pytest(path: str, extra_args: Optional[List[str]] = None) -> Dict[str, A
             "status": "fail",
         }
     extra = extra_args or []
-    if any(a.startswith("-") and a not in {"-q", "-v", "--tb=short", "--tb=line"} for a in extra):
+    allowed = {"-q", "-v", "--tb=short", "--tb=line"}
+    if any(a not in allowed for a in extra):
         return {
             "ok": False,
             "version": __version__,
@@ -280,6 +281,10 @@ def run_pytest(path: str, extra_args: Optional[List[str]] = None) -> Dict[str, A
             "stderr": "refusing unapproved pytest extra args",
             "status": "fail",
         }
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
+    env.pop("PYTEST_PLUGINS", None)
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = [sys.executable, "-m", "pytest", str(tests), "-q"] + extra
     try:
         proc = subprocess.run(
@@ -288,6 +293,7 @@ def run_pytest(path: str, extra_args: Optional[List[str]] = None) -> Dict[str, A
             capture_output=True,
             text=True,
             timeout=PYTEST_TIMEOUT_S,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return {
