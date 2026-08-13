@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 PYTEST_TIMEOUT_S = 60
 _BLOCKED_PREFIXES = ("/etc", "/proc", "/sys", "/dev", "/root", "/boot")
 
