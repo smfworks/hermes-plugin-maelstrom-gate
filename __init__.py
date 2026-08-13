@@ -94,13 +94,25 @@ def _cli(argv: Any) -> None:
             print(gate.__version__)
             return
         if ns.cmd == "skill":
-            print(json.dumps(gate.check_skill(ns.path), indent=2))
+            data = gate.check_skill(ns.path)
+            print(json.dumps(data, indent=2))
+            if data.get("status") == "fail":
+                raise SystemExit(1)
         elif ns.cmd == "plugin":
-            print(json.dumps(gate.check_plugin(ns.path), indent=2))
+            data = gate.check_plugin(ns.path)
+            print(json.dumps(data, indent=2))
+            if data.get("status") == "fail":
+                raise SystemExit(1)
         elif ns.cmd == "gate":
-            print(json.dumps(gate.full_gate(ns.path), indent=2))
+            data = gate.full_gate(ns.path)
+            print(json.dumps(data, indent=2))
+            if data.get("status") == "fail":
+                raise SystemExit(1)
         elif ns.cmd == "pytest":
-            print(json.dumps(gate.run_pytest(ns.path), indent=2))
+            data = gate.run_pytest(ns.path)
+            print(json.dumps(data, indent=2))
+            if not data.get("ok"):
+                raise SystemExit(1)
         elif ns.cmd == "selftest":
             r = __import__("subprocess").run(
                 [sys.executable, "-m", "pytest", str(Path(__file__).parent / "tests"), "-q"]
@@ -149,8 +161,8 @@ def register(ctx):
         handler=handle_pytest,
     )
     ctx.register_command(
-        "maelstrom",
-        lambda raw: _slash(raw),
+        name="maelstrom",
+        handler=_slash,
         description="Maelstrom gate: skill|plugin|gate <path>",
     )
     try:

@@ -22,6 +22,14 @@ def test_good_skill(tmp_path):
     assert r["ok"] is True
 
 
+def test_comment_register_is_not_enough(tmp_path):
+    (tmp_path / "plugin.yaml").write_text("name: x\nversion: 0\n")
+    (tmp_path / "__init__.py").write_text("# def register(ctx):\npass\n")
+    r = gate.check_plugin(str(tmp_path))
+    assert r["status"] == "fail"
+    assert any(f["code"] == "no_register" for f in r["findings"])
+
+
 def test_plugin_missing_register(tmp_path):
     (tmp_path / "plugin.yaml").write_text("name: x\nversion: 0\n")
     (tmp_path / "__init__.py").write_text("# no register\n")
