@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-plugin-maelstrom-gate"
+version = "1.1.0"
+description = "Oppositional ship gate for Hermes skills and plugins"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "SMF Works"}]
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.urls]
+Homepage = "https://github.com/smfworks/hermes-plugin-maelstrom-gate"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
