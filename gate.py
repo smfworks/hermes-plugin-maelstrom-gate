@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 PYTEST_TIMEOUT_S = 60
 _BLOCKED_PREFIXES = ("/etc", "/proc", "/sys", "/dev", "/root", "/boot")
 
@@ -47,6 +47,18 @@ def _finding(code: str, detail: str, severity: str = "error") -> Dict[str, str]:
     return {"code": code, "detail": detail, "severity": severity}
 
 
+def _split_frontmatter(text: str) -> tuple[Optional[str], str]:
+    if not text.startswith("---"):
+        return None, text
+    rest = text[3:]
+    if rest.startswith("\n"):
+        rest = rest[1:]
+    m = re.search(r"^---\s*$", rest, re.M)
+    if not m:
+        return None, text
+    return rest[: m.start()], rest[m.end() :]
+
+
 def check_skill(path: str) -> Dict[str, Any]:
     root = _safe_path(path)
     findings: List[Dict[str, str]] = []
@@ -63,15 +75,16 @@ def check_skill(path: str) -> Dict[str, Any]:
         }
 
     text = skill.read_text(encoding="utf-8", errors="replace")
-    if not text.startswith("---"):
-        findings.append(_finding("frontmatter_start", "SKILL.md must start with ---"))
-    m = re.search(r"\n---\s*\n", text[3:])
-    if not m:
-        findings.append(_finding("frontmatter_close", "No closing frontmatter fence"))
+    fm_text, body = _split_frontmatter(text)
+    if fm_text is None:
+        if not text.startswith("---"):
+            findings.append(_finding("frontmatter_start", "SKILL.md must start with ---"))
+        else:
+            findings.append(_finding("frontmatter_close", "No closing frontmatter fence"))
         fm = {}
     else:
         try:
-            fm = _load_yaml(text[3 : m.start() + 3]) or {}
+            fm = _load_yaml(fm_text) or {}
         except Exception as e:
             fm = {}
             findings.append(_finding("frontmatter_yaml", f"YAML parse error: {e}"))
@@ -101,7 +114,6 @@ def check_skill(path: str) -> Dict[str, Any]:
                 )
             )
 
-    body = text[m.start() + 4 :] if m else text
     if len(body.strip()) < 80:
         findings.append(
             _finding("thin_body", "Body too thin to change agent behavior")
@@ -191,12 +203,19 @@ def check_plugin(path: str) -> Dict[str, Any]:
         )
     else:
         src = init.read_text(encoding="utf-8", errors="replace")
-        if "def register" not in src:
-            findings.append(_finding("no_register", "register(ctx) not found"))
         try:
-            ast.parse(src)
+            tree = ast.parse(src)
         except SyntaxError as e:
             findings.append(_finding("init_syntax", f"SyntaxError: {e}"))
+            tree = None
+        has_register = False
+        if tree is not None:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) and node.name == "register":
+                    has_register = True
+                    break
+        if not has_register:
+            findings.append(_finding("no_register", "register(ctx) not found"))
 
     tests_dir = root / "tests"
     if not tests_dir.is_dir():

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 — 2026-08-13
+
+Oppositional gold pass.
+
+- Frontmatter parsed with a dedicated splitter (no off-by-N body slice)
+- `register` detected via AST, not substring
+- CLI exits 1 on fail status
+
+
 ## 1.1.1 — 2026-08-13
 
 Lookout follow-up.
