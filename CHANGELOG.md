@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 — 2026-08-13
+
+Lookout follow-up.
+
+- Current Hermes CLI/skill registration signatures
+- Never parse process argv as plugin CLI
+
 ## 1.1.0 — 2026-08-13
 
 Production-ready pass.

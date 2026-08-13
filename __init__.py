@@ -88,7 +88,7 @@ def _cli(argv: Any) -> None:
         sp = sub.add_parser(name)
         if name not in {"selftest", "version"}:
             sp.add_argument("path")
-    ns = p.parse_args(argv if isinstance(argv, list) else None)
+    ns = p.parse_args(list(argv) if isinstance(argv, list) else [])
     try:
         if ns.cmd == "version":
             print(gate.__version__)
@@ -111,6 +111,22 @@ def _cli(argv: Any) -> None:
     except Exception as e:
         print(_err(e), file=sys.stderr)
         raise SystemExit(1)
+
+
+def _cli_setup(subparser: Any) -> None:
+    subparser.add_argument("rest", nargs="*")
+
+
+def _cli_handler(ns: Any) -> int:
+    rest = list(getattr(ns, "rest", []) or [])
+    try:
+        _cli(rest)
+        return 0
+    except SystemExit as e:
+        code = e.code
+        if code is None:
+            return 0
+        return int(code) if not isinstance(code, int) else code
 
 
 def register(ctx):
@@ -139,9 +155,10 @@ def register(ctx):
     )
     try:
         ctx.register_cli_command(
-            "maelstrom",
-            _cli,
+            name="maelstrom",
             help="Oppositional ship gate",
+            setup_fn=_cli_setup,
+            handler_fn=_cli_handler,
             description="Break packages before ship",
         )
     except TypeError:
@@ -152,9 +169,12 @@ def register(ctx):
     skill = Path(__file__).parent / "skills" / "maelstrom-oppose"
     if (skill / "SKILL.md").is_file():
         try:
-            ctx.register_skill(str(skill))
-        except Exception as e:
-            logger.debug("%s", e)
+            ctx.register_skill(name="maelstrom-oppose", path=skill / "SKILL.md")
+        except TypeError:
+            try:
+                ctx.register_skill(str(skill))
+            except Exception as e:
+                logger.debug("%s", e)
 
 
 def _slash(raw: str) -> str:
