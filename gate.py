@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+__version__ = "1.1.0"
+PYTEST_TIMEOUT_S = 60
+_BLOCKED_PREFIXES = ("/etc", "/proc", "/sys", "/dev", "/root", "/boot")
 
 AI_TELLS = [
     r"in today's (?:rapidly changing )?world",
@@ -20,12 +23,32 @@ AI_TELLS = [
 ]
 
 
+def _safe_path(path: str, *, must_exist: bool = False) -> Path:
+    if not path or not isinstance(path, str) or "\x00" in path:
+        raise ValueError("invalid path")
+    p = Path(path).expanduser().resolve()
+    s = str(p)
+    if s == "/" or any(s == b or s.startswith(b + os.sep) for b in _BLOCKED_PREFIXES):
+        raise ValueError("refusing path in protected filesystem area")
+    if must_exist and not p.exists():
+        raise FileNotFoundError(s)
+    return p
+
+
+def _load_yaml(text: str) -> Any:
+    try:
+        import yaml  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("PyYAML is required for frontmatter/plugin.yaml parsing") from e
+    return yaml.safe_load(text)
+
+
 def _finding(code: str, detail: str, severity: str = "error") -> Dict[str, str]:
     return {"code": code, "detail": detail, "severity": severity}
 
 
 def check_skill(path: str) -> Dict[str, Any]:
-    root = Path(path).expanduser().resolve()
+    root = _safe_path(path)
     findings: List[Dict[str, str]] = []
     skill = root / "SKILL.md" if root.is_dir() else root
     if skill.is_dir():
@@ -33,6 +56,7 @@ def check_skill(path: str) -> Dict[str, Any]:
     if not skill.is_file():
         return {
             "ok": False,
+            "version": __version__,
             "target": str(root),
             "findings": [_finding("missing_skill_md", "SKILL.md not found")],
             "status": "fail",
@@ -47,10 +71,14 @@ def check_skill(path: str) -> Dict[str, Any]:
         fm = {}
     else:
         try:
-            fm = yaml.safe_load(text[3 : m.start() + 3]) or {}
+            fm = _load_yaml(text[3 : m.start() + 3]) or {}
         except Exception as e:
             fm = {}
             findings.append(_finding("frontmatter_yaml", f"YAML parse error: {e}"))
+
+    if not isinstance(fm, dict):
+        findings.append(_finding("frontmatter_yaml", "frontmatter must be a mapping"))
+        fm = {}
 
     if not fm.get("name"):
         findings.append(_finding("missing_name", "frontmatter.name required"))
@@ -113,6 +141,7 @@ def check_skill(path: str) -> Dict[str, Any]:
     status = "fail" if errors else ("pass_with_fixes" if findings else "pass")
     return {
         "ok": status != "fail",
+        "version": __version__,
         "status": status,
         "target": str(skill),
         "findings": findings,
@@ -125,11 +154,12 @@ def check_skill(path: str) -> Dict[str, Any]:
 
 
 def check_plugin(path: str) -> Dict[str, Any]:
-    root = Path(path).expanduser().resolve()
+    root = _safe_path(path)
     findings: List[Dict[str, str]] = []
     if not root.is_dir():
         return {
             "ok": False,
+            "version": __version__,
             "status": "fail",
             "target": str(root),
             "findings": [_finding("not_dir", "plugin path must be directory")],
@@ -142,7 +172,11 @@ def check_plugin(path: str) -> Dict[str, Any]:
         findings.append(_finding("missing_plugin_yaml", "plugin.yaml required"))
     else:
         try:
-            meta = yaml.safe_load(yml.read_text(encoding="utf-8")) or {}
+            loaded = _load_yaml(yml.read_text(encoding="utf-8")) or {}
+            if not isinstance(loaded, dict):
+                findings.append(_finding("plugin_yaml_parse", "plugin.yaml must be a mapping"))
+            else:
+                meta = loaded
         except Exception as e:
             findings.append(_finding("plugin_yaml_parse", str(e)))
     if not meta.get("name"):
@@ -196,6 +230,7 @@ def check_plugin(path: str) -> Dict[str, Any]:
     )
     return {
         "ok": status != "fail",
+        "version": __version__,
         "status": status,
         "target": str(root),
         "findings": findings,
@@ -205,30 +240,58 @@ def check_plugin(path: str) -> Dict[str, Any]:
 
 
 def run_pytest(path: str, extra_args: Optional[List[str]] = None) -> Dict[str, Any]:
-    root = Path(path).expanduser().resolve()
+    root = _safe_path(path)
     tests = root / "tests"
     if not tests.is_dir():
         return {
             "ok": False,
+            "version": __version__,
             "returncode": 2,
             "stdout": "",
             "stderr": "no tests/",
             "status": "fail",
         }
-    cmd = [sys.executable, "-m", "pytest", str(tests), "-q"] + (extra_args or [])
-    proc = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
+    extra = extra_args or []
+    if any(a.startswith("-") and a not in {"-q", "-v", "--tb=short", "--tb=line"} for a in extra):
+        return {
+            "ok": False,
+            "version": __version__,
+            "returncode": 2,
+            "stdout": "",
+            "stderr": "refusing unapproved pytest extra args",
+            "status": "fail",
+        }
+    cmd = [sys.executable, "-m", "pytest", str(tests), "-q"] + extra
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=PYTEST_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "version": __version__,
+            "returncode": 124,
+            "stdout": "",
+            "stderr": f"pytest timed out after {PYTEST_TIMEOUT_S}s",
+            "status": "fail",
+        }
     return {
         "ok": proc.returncode == 0,
+        "version": __version__,
         "returncode": proc.returncode,
         "stdout": proc.stdout[-8000:],
         "stderr": proc.stderr[-4000:],
         "status": "pass" if proc.returncode == 0 else "fail",
-        "cmd": cmd,
+        "cmd": ["python", "-m", "pytest", "tests", "-q"],
     }
 
 
 def full_gate(path: str) -> Dict[str, Any]:
-    root = Path(path).expanduser().resolve()
+    root = _safe_path(path)
     if (root / "plugin.yaml").is_file():
         static = check_plugin(str(root))
         tests = run_pytest(str(root))
@@ -238,6 +301,7 @@ def full_gate(path: str) -> Dict[str, Any]:
     else:
         return {
             "ok": False,
+            "version": __version__,
             "status": "fail",
             "error": "Unrecognized package (need plugin.yaml or SKILL.md)",
         }
@@ -251,6 +315,7 @@ def full_gate(path: str) -> Dict[str, Any]:
         status = "pass_with_fixes"
     return {
         "ok": status != "fail",
+        "version": __version__,
         "status": status,
         "static": static,
         "tests": tests,

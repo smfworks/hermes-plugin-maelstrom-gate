@@ -50,12 +50,16 @@ PYTEST_SCHEMA = {
 }
 
 
+def _err(exc: Exception) -> str:
+    return json.dumps({"ok": False, "error": str(exc), "version": gate.__version__})
+
+
 def handle_skill(args: dict, **kwargs) -> str:
     del kwargs
     try:
         return json.dumps(gate.check_skill(args["path"]), indent=2)
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return _err(e)
 
 
 def handle_plugin(args: dict, **kwargs) -> str:
@@ -63,7 +67,7 @@ def handle_plugin(args: dict, **kwargs) -> str:
     try:
         return json.dumps(gate.check_plugin(args["path"]), indent=2)
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return _err(e)
 
 
 def handle_pytest(args: dict, **kwargs) -> str:
@@ -71,7 +75,7 @@ def handle_pytest(args: dict, **kwargs) -> str:
     try:
         return json.dumps(gate.run_pytest(args["path"]), indent=2)
     except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)})
+        return _err(e)
 
 
 def _cli(argv: Any) -> None:
@@ -80,24 +84,33 @@ def _cli(argv: Any) -> None:
 
     p = argparse.ArgumentParser(prog="hermes maelstrom")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("skill", "plugin", "gate", "pytest", "selftest"):
+    for name in ("skill", "plugin", "gate", "pytest", "selftest", "version"):
         sp = sub.add_parser(name)
-        if name != "selftest":
+        if name not in {"selftest", "version"}:
             sp.add_argument("path")
     ns = p.parse_args(argv if isinstance(argv, list) else None)
-    if ns.cmd == "skill":
-        print(json.dumps(gate.check_skill(ns.path), indent=2))
-    elif ns.cmd == "plugin":
-        print(json.dumps(gate.check_plugin(ns.path), indent=2))
-    elif ns.cmd == "gate":
-        print(json.dumps(gate.full_gate(ns.path), indent=2))
-    elif ns.cmd == "pytest":
-        print(json.dumps(gate.run_pytest(ns.path), indent=2))
-    elif ns.cmd == "selftest":
-        r = __import__("subprocess").run(
-            [sys.executable, "-m", "pytest", str(Path(__file__).parent / "tests"), "-q"]
-        )
-        raise SystemExit(r.returncode)
+    try:
+        if ns.cmd == "version":
+            print(gate.__version__)
+            return
+        if ns.cmd == "skill":
+            print(json.dumps(gate.check_skill(ns.path), indent=2))
+        elif ns.cmd == "plugin":
+            print(json.dumps(gate.check_plugin(ns.path), indent=2))
+        elif ns.cmd == "gate":
+            print(json.dumps(gate.full_gate(ns.path), indent=2))
+        elif ns.cmd == "pytest":
+            print(json.dumps(gate.run_pytest(ns.path), indent=2))
+        elif ns.cmd == "selftest":
+            r = __import__("subprocess").run(
+                [sys.executable, "-m", "pytest", str(Path(__file__).parent / "tests"), "-q"]
+            )
+            raise SystemExit(r.returncode)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(_err(e), file=sys.stderr)
+        raise SystemExit(1)
 
 
 def register(ctx):
@@ -146,13 +159,24 @@ def register(ctx):
 
 def _slash(raw: str) -> str:
     parts = (raw or "").split()
+    if parts and parts[0] == "version":
+        return json.dumps({"ok": True, "version": gate.__version__})
     if len(parts) < 2:
-        return json.dumps({"error": "usage: /maelstrom skill|plugin|gate <path>"})
+        return json.dumps(
+            {
+                "ok": False,
+                "error": "usage: /maelstrom skill|plugin|gate <path>",
+                "version": gate.__version__,
+            }
+        )
     cmd, path = parts[0], parts[1]
     if cmd == "skill":
         return handle_skill({"path": path})
     if cmd == "plugin":
         return handle_plugin({"path": path})
     if cmd == "gate":
-        return json.dumps(gate.full_gate(path), indent=2)
-    return json.dumps({"error": "unknown subcommand"})
+        try:
+            return json.dumps(gate.full_gate(path), indent=2)
+        except Exception as e:
+            return _err(e)
+    return json.dumps({"ok": False, "error": "unknown subcommand", "version": gate.__version__})
